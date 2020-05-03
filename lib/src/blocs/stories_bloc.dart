@@ -1,0 +1,53 @@
+import 'package:flutter/foundation.dart';
+import 'package:rxdart/rxdart.dart';
+import '../models/item_model.dart';
+import '../resources/repository.dart';
+import 'dart:async';
+
+class StoriesBloc {
+  final _topIds = PublishSubject<List<int>>(); // similar to a stream controller
+  final _itemsOutput = BehaviorSubject<Map<int, Future<ItemModel>>>();
+  final _itemsFetcher = PublishSubject<int>();
+  final _repository = Repository();
+
+  // define Getters to get streams
+  Stream<List<int>> get topIds => _topIds.stream;
+  Stream<Map<int, Future<ItemModel>>> get items  => _itemsOutput.stream;
+
+  // Getters to sink
+  Function(int) get fetchItem => _itemsFetcher.sink.add;
+
+  // Constructor
+  StoriesBloc() {
+    _itemsFetcher.stream.transform(_itemsTransformer()).pipe(_itemsOutput);
+  }
+
+  fetchTopIds() async {
+    print('fetching top ids');
+    final ids = await _repository.fetchTopIds();
+    print('fetching complete');
+    _topIds.sink.add(ids);
+  }
+
+  clearCache() {
+    _repository.clearCache();
+  }
+
+  _itemsTransformer() {
+    print('Transformer running');
+    return ScanStreamTransformer(
+      (Map<int, Future<ItemModel>>cache, int id, i) {
+        print('fetching item: $i');
+        cache[id] = _repository.fetchItem(id);
+        return cache; //!!! need to return something from the transform for it to be passed down the line (to the pipe in this case)
+      },
+      <int, Future<ItemModel>>{}, // initial value
+    );
+  }
+
+  dispose() {
+    _topIds.close();
+    _itemsFetcher.close();
+    _itemsOutput.close();
+  }
+}
